@@ -1,0 +1,8 @@
+.aws/
+credentials
+__pycache__/
+*.jpg
+*.png
+.env
+venv/
+.DS_Store

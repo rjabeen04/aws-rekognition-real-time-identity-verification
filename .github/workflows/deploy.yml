@@ -3,6 +3,16 @@ name: Build and Deploy to AWS ECR
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_lambda:
+        description: 'Deploy Lambda function?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 env:
   AWS_REGION: us-east-1
@@ -40,6 +50,7 @@ jobs:
           echo "Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
       - name: Deploy updated Lambda
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_lambda == 'true'
         run: |
           cp lambda/lambda_processor.py lambda_processor.py
           zip lambda.zip lambda_processor.py

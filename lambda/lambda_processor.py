@@ -24,6 +24,25 @@ def lambda_handler(event, context):
         is_verified = False
         match_confidence = "N/A"
 
+        # Check if there is a face in the captured image first
+        face_check = rekognition.detect_faces(
+            Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['DEFAULT']
+        )
+        if not face_check['FaceDetails']:
+            table.put_item(Item={
+                'ImageId': key,
+                'Timestamp': str(int(time.time())),
+                'Identity': 'No Face Detected',
+                'Status': 'GUEST_ACCESS',
+                'MatchConfidence': 'N/A',
+                'TopEmotion': 'N/A',
+                'AgeRange': 'N/A',
+                'WearingHolding': [],
+                'DetectedLabels': [],
+                'BucketSource': bucket
+            })
+            return {'statusCode': 200, 'body': 'No face detected in image'}
+
         for member_file in TEAM_MEMBERS:
             compare_res = rekognition.compare_faces(
                 SourceImage={'S3Object': {'Bucket': bucket, 'Name': member_file}},

@@ -3,9 +3,7 @@ DYNAMO_TABLE = "ImageAnalysisResults"
 DATA_FILE = "session_data.json"
 
 DANGER_LABELS = {
-    "Phone", "Mobile Phone", "Cell Phone", "Weapon", "Knife",
-    "Gun", "Pistol", "Rifle", "Iphone", "Smartphone",
-    "Telephone", "Android Phone"
+    "Weapon", "Knife", "Gun", "Pistol", "Rifle"
 }
 
 BODY_PART_LABELS = {

@@ -22,6 +22,10 @@ if "alerts" not in st.session_state:
     data = load_data()
     st.session_state.alerts = data["alerts"]
     st.session_state.logs = data["logs"]
+    settings = data.get("settings", {})
+    st.session_state.similarity_threshold = settings.get("similarity_threshold", 80)
+    st.session_state.max_labels = settings.get("max_labels", 15)
+    st.session_state.custom_danger_labels = settings.get("custom_danger_labels", [])
 elif not st.session_state.alerts and not st.session_state.logs:
     data = load_data()
     st.session_state.alerts = data["alerts"]

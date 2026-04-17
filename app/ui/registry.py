@@ -8,7 +8,7 @@ def render_registry(s3, table_registry):
     st.markdown('<h2 style="color:white;">👥 Identity Registry</h2>', unsafe_allow_html=True)
     st.markdown("---")
 
-    # --- EXISTING RESIDENTS ---
+    # --- FETCH RESIDENTS ---
     try:
         response = table_registry.scan()
         residents = response.get('Items', [])
@@ -17,43 +17,72 @@ def render_registry(s3, table_registry):
         return
 
     if residents:
-        cols = st.columns(min(len(residents), 4))
-        for idx, resident in enumerate(residents):
-            with cols[idx % 4]:
-                try:
-                    img_obj = s3.get_object(Bucket=BUCKET_NAME, Key=resident['ImageKey'])
-                    img_bytes = img_obj['Body'].read()
-                    img = Image.open(io.BytesIO(img_bytes))
-                    img = ImageOps.exif_transpose(img)
-                    st.image(img, width=180)
-                except Exception:
-                    st.markdown('<p style="color:#ff4444;">No image</p>', unsafe_allow_html=True)
+        col_count, col_export = st.columns([3, 1])
+        with col_count:
+            st.markdown(f'<p style="color:#00ffcc; font-size:1.2rem; font-weight:900;">{len(residents)} registered user(s)</p>', unsafe_allow_html=True)
+        with col_export:
+            import pandas as pd
+            registry_df = pd.DataFrame([{
+                'Name': r.get('Name'),
+                'Clearance': r.get('Clearance'),
+                'Relationship': r.get('Relationship'),
+                'Address': r.get('Address'),
+                'Phone': r.get('Phone'),
+                'Status': r.get('Status')
+            } for r in residents])
+            csv = registry_df.to_csv(index=False)
+            st.download_button("⬇️ Export Registry CSV", csv, "registry.csv", "text/csv", type="primary", key="registry_export")
 
-                clearance_color = "#ff4444" if resident.get('Clearance') == "Admin" else "#ffaa00" if resident.get('Clearance') == "Team Member" else "#00ffcc"
-                st.markdown(f"""
-                <div style="background:#001a0e; border:1px solid #00ffcc; border-radius:8px; padding:12px; text-align:center; margin-top:8px; margin-bottom:8px;">
-                    <p style="color:#00ffcc; font-size:1.5rem; font-weight:900; margin:0; letter-spacing:1px;">{resident.get('Name', '').upper()}</p>
-                    <p style="color:{clearance_color}; font-size:1.1rem; font-weight:800; margin:6px 0;">🔐 {resident.get('Clearance', 'N/A')}</p>
-                    <p style="color:#ffffff; font-size:1.1rem; font-weight:700; margin:4px 0;">👤 {resident.get('Relationship', 'N/A')}</p>
-                    <p style="color:#aaaaaa; font-size:1rem; font-weight:600; margin:4px 0;">📍 {resident.get('Address', 'N/A')}</p>
-                    <p style="color:#00ffcc; font-size:1.1rem; font-weight:800; margin:4px 0;">✅ {resident.get('Status', 'Active')}</p>
-                </div>""", unsafe_allow_html=True)
-                if st.button(f"🗑️ Remove", key=f"del_{resident.get('ResidentId')}"):
-                    st.session_state[f"confirm_{resident.get('ResidentId')}"] = True
+        # Scrollable container
+        scroll_html = ""
+        for resident in residents:
+            clearance_color = "#ff4444" if resident.get('Clearance') == "Admin" else "#ffaa00" if resident.get('Clearance') == "Team Member" else "#00ffcc"
+            try:
+                img_obj = s3.get_object(Bucket=BUCKET_NAME, Key=resident['ImageKey'])
+                img_bytes = img_obj['Body'].read()
+                img = Image.open(io.BytesIO(img_bytes))
+                img = ImageOps.exif_transpose(img)
+                img.thumbnail((60, 60))
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG")
+                import base64
+                img_b64 = base64.b64encode(buf.getvalue()).decode()
+                img_tag = f'<img src="data:image/jpeg;base64,{img_b64}" style="width:60px; height:60px; object-fit:cover; border-radius:50%; border:2px solid #00ffcc;">'
+            except Exception:
+                img_tag = '<div style="width:60px; height:60px; border-radius:50%; background:#1a1a1a; border:2px solid #ff4444; display:flex; align-items:center; justify-content:center;">❌</div>'
 
-                if st.session_state.get(f"confirm_{resident.get('ResidentId')}"):
-                    st.warning(f"Are you sure you want to remove **{resident.get('Name')}**?")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("✅ Yes, Remove", key=f"yes_{resident.get('ResidentId')}", type="primary"):
-                            table_registry.delete_item(Key={'ResidentId': resident.get('ResidentId')})
-                            st.session_state.pop(f"confirm_{resident.get('ResidentId')}", None)
-                            st.success(f"{resident.get('Name')} removed!")
-                            st.rerun()
-                    with c2:
-                        if st.button("❌ Cancel", key=f"no_{resident.get('ResidentId')}"):
-                            st.session_state.pop(f"confirm_{resident.get('ResidentId')}", None)
-                            st.rerun()
+            scroll_html += f"""
+            <div style="display:flex; align-items:center; padding:14px; border-bottom:1px solid #1e2a1e; gap:16px;">
+                {img_tag}
+                <div style="flex:1;">
+                    <p style="color:#00ffcc; font-size:1.4rem; font-weight:900; margin:0;">{resident.get('Name', '').upper()}</p>
+                    <p style="color:{clearance_color}; font-size:1.1rem; font-weight:800; margin:4px 0;">🔐 {resident.get('Clearance', 'N/A')} &nbsp;|&nbsp; 👤 {resident.get('Relationship', 'N/A')} &nbsp;|&nbsp; ✅ {resident.get('Status', 'Active')}</p>
+                    <p style="color:#cccccc; font-size:1rem; font-weight:600; margin:0;">📍 {resident.get('Address', 'N/A')} &nbsp;|&nbsp; 📞 {resident.get('Phone', 'N/A')}</p>
+                </div>
+            </div>"""
+
+        st.markdown(f'<div style="max-height:400px; overflow-y:auto; border:1px solid #30363d; border-radius:8px; background:#0d1117;">{scroll_html}</div>', unsafe_allow_html=True)
+
+        # Delete section below scroll
+        st.markdown('<p style="color:#ffffff; font-size:1.2rem; font-weight:900; margin-top:12px;">🗑️ Remove a resident:</p>', unsafe_allow_html=True)
+        resident_names = {r['Name']: r['ResidentId'] for r in residents}
+        selected = st.selectbox("Select resident to remove", ["-- Select --"] + list(resident_names.keys()), label_visibility="collapsed")
+        if st.button("🗑️ Remove Selected", type="primary"):
+            if selected != "-- Select --":
+                st.session_state["confirm_delete"] = selected
+
+        if st.session_state.get("confirm_delete") and st.session_state["confirm_delete"] != "-- Select --":
+            st.warning(f"Remove **{st.session_state['confirm_delete']}**?")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ Yes, Remove", type="primary", key="confirm_yes"):
+                    table_registry.delete_item(Key={'ResidentId': resident_names[st.session_state['confirm_delete']]})
+                    st.session_state.pop("confirm_delete", None)
+                    st.rerun()
+            with c2:
+                if st.button("❌ Cancel", key="confirm_no"):
+                    st.session_state.pop("confirm_delete", None)
+                    st.rerun()
     else:
         st.markdown('<p style="color:#aaaaaa;">No residents found.</p>', unsafe_allow_html=True)
 
@@ -70,8 +99,6 @@ def render_registry(s3, table_registry):
     """, unsafe_allow_html=True)
 
     form_col, _ = st.columns([1.5, 1])
-    with form_col:
-        form_col, _ = st.columns([1.5, 1])
     with form_col:
         with st.form("add_resident_form", clear_on_submit=True):
             col1, col2, col3 = st.columns(3)
@@ -115,7 +142,7 @@ def render_registry(s3, table_registry):
                             'Phone': phone or 'N/A',
                             'Status': status
                         })
-                        st.success(f"✅ {name} added to registry successfully!")
+                        st.success(f"✅ {name} added successfully!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Failed to save resident: {e}")
+                        st.error(f"Failed to save: {e}")

@@ -1,5 +1,6 @@
 import streamlit as st
 from app.config import DANGER_LABELS
+from app.rekognition import save_data
 
 
 def render_settings():
@@ -15,7 +16,8 @@ def render_settings():
                           st.session_state.similarity_threshold, step=1,
                           label_visibility="visible")
     st.session_state.similarity_threshold = threshold
-    st.markdown(f'<p style="color:#aaaaaa; font-size:1rem;">Current: <span style="color:#00ffcc; font-weight:800;">{threshold}%</span> — higher = stricter matching</p>', unsafe_allow_html=True)
+    save_data()
+    st.markdown(f'<p style="color:#ffffff; font-size:1.1rem; font-weight:800;">Current: <span style="color:#00ffcc; font-weight:900;">{threshold}%</span> — higher = stricter matching</p>', unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -28,12 +30,13 @@ def render_settings():
                            st.session_state.max_labels, step=1,
                            label_visibility="visible")
     st.session_state.max_labels = max_labels
+    save_data()
 
     st.markdown("---")
 
     # --- DANGER LABELS ---
     st.markdown('<p style="color:#00ffcc; font-size:1.2rem; font-weight:900;">🚨 Danger Labels</p>', unsafe_allow_html=True)
-    st.markdown('<p style="color:#aaaaaa; font-size:1rem;">These labels trigger a security alert when detected.</p>', unsafe_allow_html=True)
+    st.markdown('<p style="color:#ffffff; font-size:1.1rem; font-weight:800;">These labels trigger a security alert when detected.</p>', unsafe_allow_html=True)
 
     if "custom_danger_labels" not in st.session_state:
         st.session_state.custom_danger_labels = sorted(DANGER_LABELS)
@@ -52,6 +55,7 @@ def render_settings():
         if st.button("➕ Add", type="primary"):
             if new_label and new_label not in st.session_state.custom_danger_labels:
                 st.session_state.custom_danger_labels.append(new_label)
+                save_data()
                 st.rerun()
 
     # Remove label
@@ -60,4 +64,5 @@ def render_settings():
         if st.button("🗑️ Remove", type="primary"):
             if remove_label != "-- Select --":
                 st.session_state.custom_danger_labels.remove(remove_label)
+                save_data()
                 st.rerun()

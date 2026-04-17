@@ -16,7 +16,7 @@ apply_styles()
 
 # --- AWS CLIENTS (only init once) ---
 if "aws_ready" not in st.session_state:
-    st.session_state.rekognition, st.session_state.s3, st.session_state.table = init_clients()
+    st.session_state.rekognition, st.session_state.s3, st.session_state.table, st.session_state.table_registry = init_clients()
     st.session_state.aws_ready = True
 
 # --- SESSION STATE ---
@@ -44,7 +44,7 @@ with tab_logs:
     render_logs()
 
 with tab_registry:
-    render_registry(st.session_state.s3)
+    render_registry(st.session_state.s3, st.session_state.table_registry)
 
 with tab_settings:
     render_settings()

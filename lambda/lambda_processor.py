@@ -5,8 +5,12 @@ import time
 rekognition = boto3.client('rekognition')
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('ImageAnalysisResults')
+registry_table = dynamodb.Table('SecureGuard_Registry')
 
-TEAM_MEMBERS = ["reshma.jpg", "hilton.jpeg", "david.jpg"]
+def get_team_members():
+    """Fetch registered members dynamically from DynamoDB."""
+    response = registry_table.scan()
+    return {item['ImageKey']: item['Name'] for item in response.get('Items', [])}
 BODY_PART_LABELS = {"Finger", "Hand", "Body Part", "Face", "Head", "Arm", "Leg", "Ear", "Eye", "Nose", "Mouth", "Neck", "Shoulder", "Thumb", "Person", "Human", "Portrait", "Selfie", "Photography"}
 
 def lambda_handler(event, context):
@@ -23,6 +27,9 @@ def lambda_handler(event, context):
         identity = "Unknown / Guest"
         is_verified = False
         match_confidence = "N/A"
+
+        # Fetch team members dynamically from registry
+        team_members = get_team_members()
 
         # Check if there is a face in the captured image first
         face_check = rekognition.detect_faces(
@@ -43,14 +50,13 @@ def lambda_handler(event, context):
             })
             return {'statusCode': 200, 'body': 'No face detected in image'}
 
-        for member_file in TEAM_MEMBERS:
+        for image_key, name in team_members.items():
             compare_res = rekognition.compare_faces(
-                SourceImage={'S3Object': {'Bucket': bucket, 'Name': member_file}},
+                SourceImage={'S3Object': {'Bucket': bucket, 'Name': image_key}},
                 TargetImage={'S3Object': {'Bucket': bucket, 'Name': key}},
                 SimilarityThreshold=80
             )
             if compare_res['FaceMatches']:
-                name = member_file.split('.')[0].capitalize()
                 identity = f"{name} (Team Member)"
                 is_verified = True
                 match_confidence = f"{compare_res['FaceMatches'][0]['Similarity']:.1f}%"

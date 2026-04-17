@@ -8,7 +8,8 @@ def init_clients():
         s3 = boto3.client('s3', region_name='us-east-1')
         dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
         table = dynamodb.Table(DYNAMO_TABLE)
-        return rekognition, s3, table
+        table_registry = dynamodb.Table('SecureGuard_Registry')
+        return rekognition, s3, table, table_registry
     except Exception as e:
         st.error(f"AWS client init failed: {e}")
         st.stop()

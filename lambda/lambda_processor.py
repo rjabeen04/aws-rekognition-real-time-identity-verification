@@ -18,7 +18,7 @@ def lambda_handler(event, context):
         bucket = event['Records'][0]['s3']['bucket']['name']
         key = event['Records'][0]['s3']['object']['key']
 
-        if key in TEAM_MEMBERS or key.endswith('.json'):
+        if key.endswith('.json'):
             return {'statusCode': 200, 'body': 'File skipped (System File)'}
 
         print(f"New Capture Detected: {key}. Starting Team Verification...")

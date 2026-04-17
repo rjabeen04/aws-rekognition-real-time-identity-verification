@@ -2,6 +2,7 @@ import boto3
 import streamlit as st
 from app.config import DYNAMO_TABLE
 
+@st.cache_resource
 def init_clients():
     try:
         rekognition = boto3.client('rekognition', region_name='us-east-1')

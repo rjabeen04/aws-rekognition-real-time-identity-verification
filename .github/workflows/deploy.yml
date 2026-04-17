@@ -41,8 +41,10 @@ jobs:
 
       - name: Deploy updated Lambda
         run: |
-          zip lambda.zip lambda/lambda_processor.py
+          cp lambda/lambda_processor.py lambda_processor.py
+          zip lambda.zip lambda_processor.py
           aws lambda update-function-code \
             --function-name image-processor \
             --zip-file fileb://lambda.zip \
             --region ${{ env.AWS_REGION }}
+          rm lambda_processor.py lambda.zip

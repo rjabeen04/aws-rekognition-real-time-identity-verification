@@ -148,6 +148,34 @@ streamlit run main.py
 
 ---
 
+## 🔐 IAM Security — Principle of Least Privilege
+
+Each AWS service is granted **only the minimum permissions required** — no wildcard `*` policies.
+
+### Lambda Execution Role (`image-processor-role`)
+
+| Permission | Resource | Reason |
+|---|---|---|
+| `s3:GetObject` | `arn:aws:s3:::rekognition-project-raw-captures/*` | Read captures + reference images |
+| `rekognition:CompareFaces` | `*` | Face matching |
+| `rekognition:DetectLabels` | `*` | Object/threat detection |
+| `rekognition:DetectFaces` | `*` | Emotion + age analysis |
+| `dynamodb:PutItem` | `arn:aws:dynamodb:us-east-1:*:table/ImageAnalysisResults` | Write results only |
+| `logs:CreateLogGroup` | `arn:aws:logs:*` | CloudWatch logging |
+
+### Streamlit App IAM User
+
+| Permission | Resource | Reason |
+|---|---|---|
+| `s3:PutObject` | `arn:aws:s3:::rekognition-project-raw-captures/*` | Upload captures |
+| `s3:GetObject` | `arn:aws:s3:::rekognition-project-raw-captures/*` | Load registry photos |
+| `rekognition:DetectLabels` | `*` | Local threat detection |
+| `dynamodb:Query` | `arn:aws:dynamodb:us-east-1:*:table/ImageAnalysisResults` | Poll results |
+
+> No `AdministratorAccess` or `FullAccess` policies used anywhere in this project.
+
+---
+
 ## 👤 Registered Users
 
 | Name | Reference Image |

@@ -1,6 +1,8 @@
 import json
 import boto3
 import time
+import re
+from boto3.dynamodb.conditions import Key
 
 rekognition = boto3.client('rekognition')
 dynamodb = boto3.resource('dynamodb')
@@ -13,10 +15,20 @@ def get_team_members():
     return {item['ImageKey']: item['Name'] for item in response.get('Items', [])}
 BODY_PART_LABELS = {"Finger", "Hand", "Body Part", "Face", "Head", "Arm", "Leg", "Ear", "Eye", "Nose", "Mouth", "Neck", "Shoulder", "Thumb", "Person", "Human", "Portrait", "Selfie", "Photography"}
 
+def sanitize_key(key):
+    """Sanitize S3 key to prevent NoSQL injection — allow only safe filename characters."""
+    return re.sub(r'[^a-zA-Z0-9._\-/]', '', key)
+
+
 def lambda_handler(event, context):
     try:
         bucket = event['Records'][0]['s3']['bucket']['name']
-        key = event['Records'][0]['s3']['object']['key']
+        raw_key = event['Records'][0]['s3']['object']['key']
+        key = sanitize_key(raw_key)
+
+        if not key or key != raw_key:
+            print(f"Rejected suspicious key: {raw_key}")
+            return {'statusCode': 400, 'body': 'Invalid key'}
 
         if key.endswith('.json'):
             return {'statusCode': 200, 'body': 'File skipped (System File)'}

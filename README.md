@@ -62,11 +62,23 @@ Browser Webcam (Streamlit)
 ## 📁 Project Structure
 
 ```
-├── combined_app.py        # Main Streamlit dashboard
-├── app.py                 # Original OpenCV terminal app
-├── lambda_processor.py    # AWS Lambda function code
-├── requirements.txt       # Python dependencies
-├── session_data.json      # Local session persistence
+├── main.py                  # Entry point — Streamlit dashboard
+├── app/
+│   ├── config.py            # Constants & danger labels
+│   ├── aws_clients.py       # boto3 client initialization
+│   ├── rekognition.py       # DynamoDB polling & data persistence
+│   └── ui/
+│       ├── dashboard.py     # Main scanner & identity verification
+│       ├── alerts.py        # Security alerts tab
+│       ├── logs.py          # Access history tab
+│       ├── registry.py      # Registered users tab
+│       ├── settings.py      # Configurable settings tab
+│       └── styles.py        # CSS styles
+├── lambda/
+│   └── lambda_processor.py  # AWS Lambda function
+├── app.py                   # Original OpenCV terminal app
+├── Dockerfile               # Container for team deployment
+├── requirements.txt
 └── README.md
 ```
 
@@ -120,7 +132,7 @@ aws configure
 
 **4. Run the dashboard:**
 ```bash
-streamlit run combined_app.py
+streamlit run main.py
 ```
 
 ---

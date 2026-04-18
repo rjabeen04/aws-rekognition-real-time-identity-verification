@@ -6,25 +6,25 @@ from app.rekognition import poll_dynamodb, save_data
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:378494867598:SecureGuard-Alerts"
 
 
+def _get_stats(table):
+    response = table.scan(ProjectionExpression="#st, Severity", ExpressionAttributeNames={"#st": "Status"})
+    items = response.get('Items', [])
+    total = len([i for i in items if i.get('Status') not in ('', None)])
+    threats = len([i for i in items if i.get('Severity') in ('CRITICAL', 'MEDIUM')])
+    authorized = len([i for i in items if i.get('Status') == 'AUTHORIZED'])
+    return total, authorized, threats
+
+
 def render_dashboard(rekognition, s3, table, sns):
     st.markdown('<h1 style="color:white;">🏠 SecureHome Dashboard</h1>', unsafe_allow_html=True)
 
     # --- STATS ROW ---
-    if st.session_state.logs:
-        total = len(st.session_state.logs)
-        threats_count = len(st.session_state.alerts)
-        authorized = total - threats_count
-        last_scan = st.session_state.logs[-1]["Timestamp"]
-        s1, s2, s3_col, s4, s5 = st.columns([1, 1, 1, 1.5, 0.8])
+    total, authorized, threats_count = _get_stats(table)
+    if total > 0:
+        s1, s2, s3_col = st.columns(3)
         s1.metric("Total Scans", total)
         s2.metric("✅ Authorized", authorized)
-        s3_col.metric("⛔ Threats", threats_count)
-        s4.metric("Last Scan", last_scan)
-        if s5.button("🗑️ Clear Session"):
-            st.session_state.alerts = []
-            st.session_state.logs = []
-            save_data()
-            st.rerun()
+        s3_col.metric("⛔ Threats / Alerts", threats_count)
         st.markdown("---")
 
     st.markdown('<p style="color:#00ffcc; font-size:1.5rem; font-weight:900; letter-spacing:2px;">📡 BIOMETRIC SCANNER — POSITION FACE IN FRAME</p>', unsafe_allow_html=True)
@@ -40,7 +40,11 @@ def render_dashboard(rekognition, s3, table, sns):
             capture_key = f"sec_capture_{ts.replace(' ', '_').replace(':', '')}.jpg"
 
             try:
-                label_response = rekognition.detect_labels(Image={'Bytes': image_bytes}, MaxLabels=st.session_state.get('max_labels', 20), MinConfidence=50)
+                label_response = rekognition.detect_labels(
+                    Image={'Bytes': image_bytes},
+                    MaxLabels=st.session_state.get('max_labels', 20),
+                    MinConfidence=50
+                )
             except Exception as e:
                 st.error(f"Rekognition error: {e}")
                 st.stop()
@@ -55,7 +59,6 @@ def render_dashboard(rekognition, s3, table, sns):
             elif is_human:
                 _show_identity(image_bytes, ts, capture_key, s3, table, label_response)
             else:
-                # Show detected objects even if no person/threat
                 filtered = [l for l in label_response['Labels'] if l['Name'] not in BODY_PART_LABELS][:4]
                 if filtered:
                     st.markdown('<p style="color:#aaaaaa; font-size:1.3rem; font-weight:800;">🔍 No person detected. Objects in frame:</p>', unsafe_allow_html=True)
@@ -76,7 +79,7 @@ def _show_threat(image_bytes, threats, ts, s3, sns):
     <div class="threat-card" style="background:#1a0000; border:2px solid #ff4444; border-radius:10px; padding:20px; margin-bottom:15px;">
         <p style="color:#ff4444; font-size:1.8rem; font-weight:900; margin:0;">🚨 SECURITY ALERT</p>
         <p style="color:#ffffff; font-size:1.3rem; font-weight:800; margin:8px 0 4px 0;">⚠️ Threat Detected: <span style="color:#ff4444;">{threat_str}</span></p>
-        <p style="color:#aaaaaa; font-size:1.1rem; margin:4px 0;">📋 Reason: Unauthorized or dangerous object detected in secured zone</p>
+        <p style="color:#aaaaaa; font-size:1.1rem; margin:4px 0;">📋 Reason: Dangerous object detected in secured zone</p>
         <p style="color:#ffaa00; font-size:1.1rem; font-weight:800; margin:4px 0;">🔒 Action: Access Denied — Notify security personnel immediately</p>
     </div>""", unsafe_allow_html=True)
     st.image(image_bytes, width=300)
@@ -91,14 +94,7 @@ def _show_threat(image_bytes, threats, ts, s3, sns):
         sns.publish(
             TopicArn=SNS_TOPIC_ARN,
             Subject=f"🔴 SecureGuard CRITICAL Alert — {threat_str}",
-            Message=f"""SecureGuard Security Alert
-==========================
-Severity:  CRITICAL
-Timestamp: {ts}
-Threat:    {threat_str}
-Identity:  Unknown
-
-Dangerous object detected in secured zone. Immediate action required."""
+            Message=f"Severity: CRITICAL\nTimestamp: {ts}\nThreat: {threat_str}\nIdentity: Unknown\n\nDangerous object detected in secured zone."
         )
     except Exception as e:
         st.warning(f"SNS error: {e}")
@@ -127,22 +123,10 @@ def _show_identity(image_bytes, ts, capture_key, s3, table, label_response):
                 <p style="color:#00ffcc; font-size:1.1rem; font-weight:800; margin:4px 0;">🔓 Action: Access Granted — Welcome, {name}</p>
             </div>""", unsafe_allow_html=True)
             st.image(image_bytes, width=300)
-
             m1, m2, m3 = st.columns(3)
             m1.metric("Emotion", emotion)
             m2.metric("Age Range", age_range)
             m3.metric("Status", "✅ VERIFIED")
-
-            st.session_state.logs.append({
-                "Timestamp": ts,
-                "User": name,
-                "Status": "✅ AUTHORIZED",
-                "MatchConfidence": result.get('MatchConfidence', 'N/A'),
-                "Emotion": emotion,
-                "WearingHolding": ", ".join(result.get('WearingHolding', [])),
-                "ImageKey": capture_key,
-                "Threats": "None"
-            })
 
             filtered = [l for l in label_response['Labels'] if l['Name'] not in BODY_PART_LABELS][:4]
             if filtered:
@@ -161,18 +145,5 @@ def _show_identity(image_bytes, ts, capture_key, s3, table, label_response):
                 <p style="color:#ffaa00; font-size:1.1rem; font-weight:800; margin:4px 0;">🔒 Action: Access Denied — Unrecognized individual</p>
             </div>""", unsafe_allow_html=True)
             st.image(image_bytes, width=300)
-            st.session_state.alerts.append({"Timestamp": ts, "Threats": "Unknown Person", "Top Label": "Face"})
-            st.session_state.logs.append({
-                "Timestamp": ts,
-                "User": "Unknown",
-                "Status": "⛔ DENIED",
-                "MatchConfidence": "0%",
-                "Emotion": emotion,
-                "WearingHolding": ", ".join(result.get('WearingHolding', [])),
-                "ImageKey": capture_key,
-                "Threats": "Unrecognized Face"
-            })
     else:
         st.warning("⏳ Lambda did not respond in time. Please try again.")
-
-    save_data()

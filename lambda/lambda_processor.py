@@ -123,7 +123,7 @@ def lambda_handler(event, context):
         age_range = "N/A"
         if face_res['FaceDetails']:
             face = face_res['FaceDetails'][0]
-            emotion = face['Emotions'][0]['TYPE'] if face['Emotions'] else 'N/A'
+            emotion = face['Emotions'][0]['Type'] if face['Emotions'] else 'N/A'
             age_range = f"{face['AgeRange']['Low']}-{face['AgeRange']['High']}"
 
         # --- SEVERITY ---

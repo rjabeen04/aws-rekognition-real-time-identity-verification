@@ -21,10 +21,12 @@ def fetch_alerts(table):
     alerts = []
     for item in items:
         identity = item.get('Identity', '')
-        severity = item.get('Severity', 'INFO')
-        if severity not in ('CRITICAL', 'MEDIUM'):
+        severity = item.get('Severity', '')
+        is_threat = severity == 'CRITICAL' or 'Threat' in identity
+        is_unknown = severity == 'MEDIUM' and 'Unknown' in identity
+        if not (is_threat or is_unknown):
             continue
-        if identity == 'No Face Detected':
+        if identity in ('No Face Detected', None, ''):
             continue
         ts = item.get('Timestamp', '')
         try:

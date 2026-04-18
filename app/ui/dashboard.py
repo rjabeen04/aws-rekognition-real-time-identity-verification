@@ -55,7 +55,7 @@ def render_dashboard(rekognition, s3, table, sns):
             is_human = any(l in all_labels for l in ['Person', 'Human', 'Face', 'Head', 'Portrait', 'Selfie'])
 
             if threats:
-                _show_threat(image_bytes, threats, ts, s3, sns)
+                _show_threat(image_bytes, threats, ts, s3, sns, table)
             elif is_human:
                 _show_identity(image_bytes, ts, capture_key, s3, table, label_response)
             else:
@@ -73,7 +73,7 @@ def render_dashboard(rekognition, s3, table, sns):
             st.markdown('<p style="color:#ffffff; font-size:1.8rem; font-weight:900; letter-spacing:1px;">⏳ Awaiting scanner input...</p>', unsafe_allow_html=True)
 
 
-def _show_threat(image_bytes, threats, ts, s3, sns):
+def _show_threat(image_bytes, threats, ts, s3, sns, table=None):
     threat_str = ', '.join(threats).upper()
     st.markdown(f"""
     <div class="threat-card" style="background:#1a0000; border:2px solid #ff4444; border-radius:10px; padding:20px; margin-bottom:15px;">
@@ -98,6 +98,21 @@ def _show_threat(image_bytes, threats, ts, s3, sns):
         )
     except Exception as e:
         st.warning(f"SNS error: {e}")
+
+    if table:
+        try:
+            import time
+            table.put_item(Item={
+                'ImageId': capture_key,
+                'Timestamp': str(int(time.mktime(datetime.strptime(ts, '%Y-%m-%d %H:%M:%S').timetuple()))),
+                'Identity': 'Unknown / Threat',
+                'Status': 'DENIED',
+                'Severity': 'CRITICAL',
+                'AlertStatus': '🔔 New',
+                'DetectedLabels': threats,
+            })
+        except Exception as e:
+            st.warning(f"DynamoDB write error: {e}")
 
 
 def _show_identity(image_bytes, ts, capture_key, s3, table, label_response):

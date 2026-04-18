@@ -11,7 +11,7 @@ table = dynamodb.Table('ImageAnalysisResults')
 registry_table = dynamodb.Table('SecureGuard_Registry')
 
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:378494867598:SecureGuard-Alerts"
-CRITICAL_LABELS = {"Knife", "Gun", "Weapon", "Rifle", "Pistol", "Dagger", "Blade"}  # keep in sync with app/config.py DANGER_LABELS
+CRITICAL_LABELS = {"Knife", "Gun", "Weapon", "Rifle", "Pistol", "Dagger", "Blade", "Cutlery", "Kitchen Knife", "Sword", "Axe", "Firearm", "Handgun"}  # keep in sync with app/config.py DANGER_LABELS
 BODY_PART_LABELS = {"Finger", "Hand", "Body Part", "Face", "Head", "Arm", "Leg", "Ear", "Eye", "Nose", "Mouth", "Neck", "Shoulder", "Thumb", "Person", "Human", "Portrait", "Selfie", "Photography"}
 
 
@@ -109,7 +109,7 @@ def lambda_handler(event, context):
 
         # --- OBJECT & ATTRIBUTE ANALYTICS ---
         label_res = rekognition.detect_labels(
-            Image={'S3Object': {'Bucket': bucket, 'Name': key}}, MaxLabels=15, MinConfidence=75
+            Image={'S3Object': {'Bucket': bucket, 'Name': key}}, MaxLabels=50, MinConfidence=30
         )
         face_res = rekognition.detect_faces(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['ALL']
@@ -130,10 +130,11 @@ def lambda_handler(event, context):
         severity = get_severity(threats, is_verified, identity)
 
         # --- SEND EMAIL IF CRITICAL OR MEDIUM ---
-        if severity in ("CRITICAL", "MEDIUM") and threats:
+        if severity in ("CRITICAL", "MEDIUM"):
             try:
                 ts = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
-                send_email_alert(severity, threats if threats else [identity], identity, match_confidence, key, ts)
+                alert_threats = threats if threats else [identity]
+                send_email_alert(severity, alert_threats, identity, match_confidence, key, ts)
                 print(f"Email alert sent: {severity}")
             except Exception as e:
                 print(f"SNS error: {e}")
@@ -149,7 +150,7 @@ def lambda_handler(event, context):
             'MatchConfidence': match_confidence,
             'TopEmotion': emotion,
             'AgeRange': age_range,
-            'WearingHolding': scene_objects[:5],
+            'WearingHolding': scene_objects,
             'DetectedLabels': all_labels,
             'BucketSource': bucket
         })

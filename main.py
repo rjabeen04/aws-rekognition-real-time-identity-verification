@@ -18,18 +18,12 @@ apply_styles()
 rekognition, s3, table, table_registry, sns = init_clients()
 
 # --- SESSION STATE ---
-if "alerts" not in st.session_state:
+if "similarity_threshold" not in st.session_state:
     data = load_data()
-    st.session_state.alerts = data["alerts"]
-    st.session_state.logs = data["logs"]
     settings = data.get("settings", {})
     st.session_state.similarity_threshold = settings.get("similarity_threshold", 80)
     st.session_state.max_labels = settings.get("max_labels", 15)
     st.session_state.custom_danger_labels = settings.get("custom_danger_labels", [])
-elif not st.session_state.alerts and not st.session_state.logs:
-    data = load_data()
-    st.session_state.alerts = data["alerts"]
-    st.session_state.logs = data["logs"]
 
 # --- TABS ---
 tab_dash, tab_alerts, tab_logs, tab_registry, tab_settings = st.tabs([
@@ -40,10 +34,10 @@ with tab_dash:
     render_dashboard(rekognition, s3, table, sns)
 
 with tab_alerts:
-    render_alerts()
+    render_alerts(table)
 
 with tab_logs:
-    render_logs()
+    render_logs(table)
 
 with tab_registry:
     render_registry(s3, table_registry)

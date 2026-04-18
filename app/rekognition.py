@@ -25,8 +25,6 @@ def load_data():
 def save_data():
     with open(DATA_FILE, "w") as f:
         json.dump({
-            "alerts": st.session_state.alerts,
-            "logs": st.session_state.logs,
             "settings": {
                 "similarity_threshold": st.session_state.get("similarity_threshold", 80),
                 "max_labels": st.session_state.get("max_labels", 15),

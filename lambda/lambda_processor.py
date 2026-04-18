@@ -6,18 +6,48 @@ from boto3.dynamodb.conditions import Key
 
 rekognition = boto3.client('rekognition')
 dynamodb = boto3.resource('dynamodb')
+sns = boto3.client('sns')
 table = dynamodb.Table('ImageAnalysisResults')
 registry_table = dynamodb.Table('SecureGuard_Registry')
 
-def get_team_members():
-    """Fetch registered members dynamically from DynamoDB."""
-    response = registry_table.scan()
-    return {item['ImageKey']: item['Name'] for item in response.get('Items', [])}
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:378494867598:SecureGuard-Alerts"
+CRITICAL_LABELS = {"Knife", "Gun", "Weapon", "Rifle", "Pistol"}
 BODY_PART_LABELS = {"Finger", "Hand", "Body Part", "Face", "Head", "Arm", "Leg", "Ear", "Eye", "Nose", "Mouth", "Neck", "Shoulder", "Thumb", "Person", "Human", "Portrait", "Selfie", "Photography"}
 
+
+def get_team_members():
+    response = registry_table.scan()
+    return {item['ImageKey']: item['Name'] for item in response.get('Items', [])}
+
+
 def sanitize_key(key):
-    """Sanitize S3 key to prevent NoSQL injection — allow only safe filename characters."""
     return re.sub(r'[^a-zA-Z0-9._\-/]', '', key)
+
+
+def get_severity(threats, is_verified, identity):
+    if any(t in CRITICAL_LABELS for t in threats):
+        return "CRITICAL"
+    if not is_verified and identity == "Unknown / Guest":
+        return "MEDIUM"
+    return "INFO"
+
+
+def send_email_alert(severity, threats, identity, match_confidence, key, timestamp):
+    emoji = "🔴" if severity == "CRITICAL" else "🟡" if severity == "MEDIUM" else "🔵"
+    subject = f"{emoji} SecureGuard {severity} Alert — {', '.join(threats).upper()}"
+    message = f"""
+SecureGuard Security Alert
+==========================
+Severity:    {severity}
+Timestamp:   {timestamp}
+Threat:      {', '.join(threats).upper()}
+Identity:    {identity}
+Confidence:  {match_confidence}
+Image Key:   {key}
+
+This is an automated alert from your SecureGuard Biometric Platform.
+"""
+    sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=message)
 
 
 def lambda_handler(event, context):
@@ -35,15 +65,14 @@ def lambda_handler(event, context):
 
         print(f"New Capture Detected: {key}. Starting Team Verification...")
 
-        # --- 1. FACE MATCHING ---
         identity = "Unknown / Guest"
         is_verified = False
         match_confidence = "N/A"
+        threats = []
 
-        # Fetch team members dynamically from registry
         team_members = get_team_members()
 
-        # Check if there is a face in the captured image first
+        # --- FACE CHECK ---
         face_check = rekognition.detect_faces(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['DEFAULT']
         )
@@ -53,6 +82,8 @@ def lambda_handler(event, context):
                 'Timestamp': str(int(time.time())),
                 'Identity': 'No Face Detected',
                 'Status': 'GUEST_ACCESS',
+                'Severity': 'INFO',
+                'AlertStatus': 'New',
                 'MatchConfidence': 'N/A',
                 'TopEmotion': 'N/A',
                 'AgeRange': 'N/A',
@@ -62,6 +93,7 @@ def lambda_handler(event, context):
             })
             return {'statusCode': 200, 'body': 'No face detected in image'}
 
+        # --- FACE MATCHING ---
         for image_key, name in team_members.items():
             compare_res = rekognition.compare_faces(
                 SourceImage={'S3Object': {'Bucket': bucket, 'Name': image_key}},
@@ -75,7 +107,7 @@ def lambda_handler(event, context):
                 print(f"Match Found: {identity} ({match_confidence})")
                 break
 
-        # --- 2. OBJECT & ATTRIBUTE ANALYTICS ---
+        # --- OBJECT & ATTRIBUTE ANALYTICS ---
         label_res = rekognition.detect_labels(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}}, MaxLabels=15, MinConfidence=75
         )
@@ -83,36 +115,44 @@ def lambda_handler(event, context):
             Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['ALL']
         )
 
-        # All labels
         all_labels = [l['Name'] for l in label_res['Labels']]
-
-        # Filter out body parts to get wearing/holding objects
+        threats = [l for l in all_labels if l in CRITICAL_LABELS]
         scene_objects = [l for l in all_labels if l not in BODY_PART_LABELS]
 
-        # Face attributes
         emotion = "N/A"
         age_range = "N/A"
-
         if face_res['FaceDetails']:
             face = face_res['FaceDetails'][0]
-            emotion = face['Emotions'][0]['Type']
+            emotion = face['Emotions'][0]['TYPE'] if face['Emotions'] else 'N/A'
             age_range = f"{face['AgeRange']['Low']}-{face['AgeRange']['High']}"
 
-        # --- 3. SAVE TO DYNAMODB ---
-        table.put_item(
-            Item={
-                'ImageId': key,
-                'Timestamp': str(int(time.time())),
-                'Identity': identity,
-                'Status': "AUTHORIZED" if is_verified else "GUEST_ACCESS",
-                'MatchConfidence': match_confidence,
-                'TopEmotion': emotion,
-                'AgeRange': age_range,
-                'WearingHolding': scene_objects[:5],
-                'DetectedLabels': all_labels,
-                'BucketSource': bucket
-            }
-        )
+        # --- SEVERITY ---
+        severity = get_severity(threats, is_verified, identity)
+
+        # --- SEND EMAIL IF CRITICAL OR MEDIUM ---
+        if severity in ("CRITICAL", "MEDIUM") and threats:
+            try:
+                ts = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
+                send_email_alert(severity, threats if threats else [identity], identity, match_confidence, key, ts)
+                print(f"Email alert sent: {severity}")
+            except Exception as e:
+                print(f"SNS error: {e}")
+
+        # --- SAVE TO DYNAMODB ---
+        table.put_item(Item={
+            'ImageId': key,
+            'Timestamp': str(int(time.time())),
+            'Identity': identity,
+            'Status': "AUTHORIZED" if is_verified else "GUEST_ACCESS",
+            'Severity': severity,
+            'AlertStatus': 'New',
+            'MatchConfidence': match_confidence,
+            'TopEmotion': emotion,
+            'AgeRange': age_range,
+            'WearingHolding': scene_objects[:5],
+            'DetectedLabels': all_labels,
+            'BucketSource': bucket
+        })
 
         print(f"LOG SUCCESS: {identity} saved to DynamoDB.")
         return {'statusCode': 200, 'body': json.dumps(f"Result: {identity}")}

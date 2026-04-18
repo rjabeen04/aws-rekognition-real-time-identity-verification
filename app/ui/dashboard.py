@@ -40,7 +40,7 @@ def render_dashboard(rekognition, s3, table, sns):
             capture_key = f"sec_capture_{ts.replace(' ', '_').replace(':', '')}.jpg"
 
             try:
-                label_response = rekognition.detect_labels(Image={'Bytes': image_bytes}, MaxLabels=st.session_state.get('max_labels', 15), MinConfidence=75)
+                label_response = rekognition.detect_labels(Image={'Bytes': image_bytes}, MaxLabels=st.session_state.get('max_labels', 20), MinConfidence=50)
             except Exception as e:
                 st.error(f"Rekognition error: {e}")
                 st.stop()
@@ -51,7 +51,7 @@ def render_dashboard(rekognition, s3, table, sns):
             is_human = any(l in all_labels for l in ['Person', 'Human', 'Face', 'Head', 'Portrait', 'Selfie'])
 
             if threats:
-                _show_threat(image_bytes, threats, ts, sns)
+                _show_threat(image_bytes, threats, ts, s3, sns)
             elif is_human:
                 _show_identity(image_bytes, ts, capture_key, s3, table, label_response)
             else:
@@ -70,7 +70,7 @@ def render_dashboard(rekognition, s3, table, sns):
             st.markdown('<p style="color:#ffffff; font-size:1.8rem; font-weight:900; letter-spacing:1px;">⏳ Awaiting scanner input...</p>', unsafe_allow_html=True)
 
 
-def _show_threat(image_bytes, threats, ts, sns):
+def _show_threat(image_bytes, threats, ts, s3, sns):
     threat_str = ', '.join(threats).upper()
     st.markdown(f"""
     <div class="threat-card" style="background:#1a0000; border:2px solid #ff4444; border-radius:10px; padding:20px; margin-bottom:15px;">
@@ -80,18 +80,13 @@ def _show_threat(image_bytes, threats, ts, sns):
         <p style="color:#ffaa00; font-size:1.1rem; font-weight:800; margin:4px 0;">🔒 Action: Access Denied — Notify security personnel immediately</p>
     </div>""", unsafe_allow_html=True)
     st.image(image_bytes, width=300)
-    st.session_state.alerts.append({"Timestamp": ts, "Threats": ", ".join(threats), "Top Label": ", ".join(threats)})
-    st.session_state.logs.append({
-        "Timestamp": ts,
-        "User": "Unknown",
-        "Status": "⛔ DENIED",
-        "MatchConfidence": "N/A",
-        "Emotion": "N/A",
-        "WearingHolding": ", ".join(threats),
-        "ImageKey": "threat_detected",
-        "Threats": ", ".join(threats)
-    })
-    save_data()
+
+    capture_key = f"threat_{ts.replace(' ', '_').replace(':', '')}.jpg"
+    try:
+        s3.put_object(Bucket=BUCKET_NAME, Key=capture_key, Body=image_bytes)
+    except Exception as e:
+        st.warning(f"S3 upload error: {e}")
+
     try:
         sns.publish(
             TopicArn=SNS_TOPIC_ARN,

@@ -11,7 +11,7 @@ table = dynamodb.Table('ImageAnalysisResults')
 registry_table = dynamodb.Table('SecureGuard_Registry')
 
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:378494867598:SecureGuard-Alerts"
-CRITICAL_LABELS = {"Knife", "Gun", "Weapon", "Rifle", "Pistol", "Dagger", "Blade"}
+CRITICAL_LABELS = {"Knife", "Gun", "Weapon", "Rifle", "Pistol", "Dagger", "Blade"}  # keep in sync with app/config.py DANGER_LABELS
 BODY_PART_LABELS = {"Finger", "Hand", "Body Part", "Face", "Head", "Arm", "Leg", "Ear", "Eye", "Nose", "Mouth", "Neck", "Shoulder", "Thumb", "Person", "Human", "Portrait", "Selfie", "Photography"}
 
 

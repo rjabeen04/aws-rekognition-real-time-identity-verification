@@ -44,7 +44,8 @@ def render_dashboard(rekognition, s3, table):
                 st.stop()
 
             all_labels = [l['Name'] for l in label_response['Labels']]
-            threats = [t for t in all_labels if t in st.session_state.get('custom_danger_labels', DANGER_LABELS)]
+            active_danger = DANGER_LABELS | set(st.session_state.get('custom_danger_labels', []))
+            threats = [t for t in all_labels if t in active_danger]
             is_human = any(l in all_labels for l in ['Person', 'Human', 'Face', 'Head', 'Portrait', 'Selfie'])
 
             if threats:

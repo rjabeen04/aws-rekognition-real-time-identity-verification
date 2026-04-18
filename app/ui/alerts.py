@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 from app.ui.styles import render_table
 from app.rekognition import save_data
+from app.config import DANGER_LABELS
 
 
 def get_severity(threats):
-    critical = {"Knife", "Gun", "Weapon", "Rifle", "Pistol"}
+    critical = DANGER_LABELS
     threat_list = [t.strip() for t in threats.split(",")]
     if any(t in critical for t in threat_list):
         return "🔴 CRITICAL"

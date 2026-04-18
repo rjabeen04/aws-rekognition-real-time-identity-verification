@@ -15,7 +15,7 @@ st.set_page_config(page_title="SecureHome AI", layout="wide")
 apply_styles()
 
 # --- AWS CLIENTS (cached across reruns) ---
-rekognition, s3, table, table_registry = init_clients()
+rekognition, s3, table, table_registry, sns = init_clients()
 
 # --- SESSION STATE ---
 if "alerts" not in st.session_state:
@@ -37,7 +37,7 @@ tab_dash, tab_alerts, tab_logs, tab_registry, tab_settings = st.tabs([
 ])
 
 with tab_dash:
-    render_dashboard(rekognition, s3, table)
+    render_dashboard(rekognition, s3, table, sns)
 
 with tab_alerts:
     render_alerts()

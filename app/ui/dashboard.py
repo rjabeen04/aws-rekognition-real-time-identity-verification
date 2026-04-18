@@ -3,8 +3,10 @@ from datetime import datetime
 from app.config import BUCKET_NAME, DANGER_LABELS, BODY_PART_LABELS
 from app.rekognition import poll_dynamodb, save_data
 
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:378494867598:SecureGuard-Alerts"
 
-def render_dashboard(rekognition, s3, table):
+
+def render_dashboard(rekognition, s3, table, sns):
     st.markdown('<h1 style="color:white;">🏠 SecureHome Dashboard</h1>', unsafe_allow_html=True)
 
     # --- STATS ROW ---
@@ -49,7 +51,7 @@ def render_dashboard(rekognition, s3, table):
             is_human = any(l in all_labels for l in ['Person', 'Human', 'Face', 'Head', 'Portrait', 'Selfie'])
 
             if threats:
-                _show_threat(image_bytes, threats, ts)
+                _show_threat(image_bytes, threats, ts, sns)
             elif is_human:
                 _show_identity(image_bytes, ts, capture_key, s3, table, label_response)
             else:
@@ -68,7 +70,7 @@ def render_dashboard(rekognition, s3, table):
             st.markdown('<p style="color:#ffffff; font-size:1.8rem; font-weight:900; letter-spacing:1px;">⏳ Awaiting scanner input...</p>', unsafe_allow_html=True)
 
 
-def _show_threat(image_bytes, threats, ts):
+def _show_threat(image_bytes, threats, ts, sns):
     threat_str = ', '.join(threats).upper()
     st.markdown(f"""
     <div class="threat-card" style="background:#1a0000; border:2px solid #ff4444; border-radius:10px; padding:20px; margin-bottom:15px;">
@@ -90,6 +92,21 @@ def _show_threat(image_bytes, threats, ts):
         "Threats": ", ".join(threats)
     })
     save_data()
+    try:
+        sns.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=f"🔴 SecureGuard CRITICAL Alert — {threat_str}",
+            Message=f"""SecureGuard Security Alert
+==========================
+Severity:  CRITICAL
+Timestamp: {ts}
+Threat:    {threat_str}
+Identity:  Unknown
+
+Dangerous object detected in secured zone. Immediate action required."""
+        )
+    except Exception as e:
+        st.warning(f"SNS error: {e}")
 
 
 def _show_identity(image_bytes, ts, capture_key, s3, table, label_response):

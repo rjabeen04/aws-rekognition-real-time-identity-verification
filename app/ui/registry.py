@@ -3,8 +3,10 @@ from PIL import Image, ImageOps
 import io
 from app.config import BUCKET_NAME
 
+COLLECTION_ID = "secureguard-users"
 
-def render_registry(s3, table_registry):
+
+def render_registry(s3, table_registry, rekognition_client=None):
     st.markdown('<h2 style="color:white;">👥 Identity Registry</h2>', unsafe_allow_html=True)
     st.markdown("---")
 
@@ -49,7 +51,7 @@ def render_registry(s3, table_registry):
                 img_b64 = base64.b64encode(buf.getvalue()).decode()
                 img_tag = f'<img src="data:image/jpeg;base64,{img_b64}" style="width:60px; height:60px; object-fit:cover; border-radius:50%; border:2px solid #00ffcc;">'
             except Exception:
-                img_tag = '<div style="width:60px; height:60px; border-radius:50%; background:#1a1a1a; border:2px solid #ff4444; display:flex; align-items:center; justify-content:center;">❌</div>'
+                img_tag = '<img src="https://ui-avatars.com/api/?name={name}&background=1a1a2e&color=00ffcc&size=60&rounded=true&bold=true" style="width:60px; height:60px; border-radius:50%; border:2px solid #555;">'.format(name=resident.get('Name', 'U').replace(' ', '+'))
 
             scroll_html += f"""
             <div style="display:flex; align-items:center; padding:14px; border-bottom:1px solid #1e2a1e; gap:16px;">
@@ -131,6 +133,17 @@ def render_registry(s3, table_registry):
                     except Exception as e:
                         st.error(f"Photo upload failed: {e}")
                         return
+                    # Index face into Rekognition collection
+                    if rekognition_client:
+                        try:
+                            rekognition_client.index_faces(
+                                CollectionId=COLLECTION_ID,
+                                Image={'S3Object': {'Bucket': BUCKET_NAME, 'Name': image_key}},
+                                ExternalImageId=name,
+                                DetectionAttributes=['DEFAULT']
+                            )
+                        except Exception as e:
+                            st.warning(f"Face indexing failed: {e}")
                     try:
                         table_registry.put_item(Item={
                             'ResidentId': resident_id,

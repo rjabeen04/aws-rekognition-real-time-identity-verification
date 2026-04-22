@@ -52,10 +52,11 @@ def render_dashboard(rekognition, s3, table, sns):
             all_labels = [l['Name'] for l in label_response['Labels']]
             active_danger = DANGER_LABELS | set(st.session_state.get('custom_danger_labels', []))
             threats = [t for t in all_labels if t in active_danger]
-            is_human = any(l in all_labels for l in ['Person', 'Human', 'Face', 'Head', 'Portrait', 'Selfie'])
+            HUMAN_LABELS = {'Person', 'Human', 'Face', 'Head', 'Portrait', 'Selfie', 'People', 'Adult', 'Male', 'Female', 'Man', 'Woman', 'Boy', 'Girl', 'Child', 'Baby'}
+            is_human = any(l in HUMAN_LABELS for l in all_labels)
 
             if threats:
-                _show_threat(image_bytes, threats, ts, s3, sns, table)
+                _show_threat(image_bytes, threats, ts, s3, sns, table, all_labels)
             elif is_human:
                 _show_identity(image_bytes, ts, capture_key, s3, table, label_response)
             else:
@@ -67,13 +68,31 @@ def render_dashboard(rekognition, s3, table, sns):
                         target = i_col1 if idx % 2 == 0 else i_col2
                         with target:
                             st.markdown(f'<div class="infra-card"><div class="infra-label">{label["Name"]}</div><div class="infra-val">{label["Confidence"]:.0f}% Confidence</div></div>', unsafe_allow_html=True)
+                    try:
+                        import time
+                        table.put_item(Item={
+                            'ImageId': capture_key,
+                            'Timestamp': str(int(time.mktime(datetime.strptime(ts, '%Y-%m-%d %H:%M:%S').timetuple()))),
+                            'Identity': 'No Face Detected',
+                            'Status': 'GUEST_ACCESS',
+                            'Severity': 'INFO',
+                            'AlertStatus': 'New',
+                            'MatchConfidence': 'N/A',
+                            'TopEmotion': 'N/A',
+                            'AgeRange': 'N/A',
+                            'WearingHolding': [l['Name'] for l in label_response['Labels'] if l['Name'] not in BODY_PART_LABELS],
+                            'DetectedLabels': [l['Name'] for l in label_response['Labels']],
+                            'BucketSource': BUCKET_NAME
+                        })
+                    except Exception as e:
+                        st.warning(f"Log error: {e}")
                 else:
                     st.markdown('<p style="color:#aaaaaa; font-size:1.3rem; font-weight:800;">🔍 No person or objects detected. Please position in frame.</p>', unsafe_allow_html=True)
         else:
             st.markdown('<p style="color:#ffffff; font-size:1.8rem; font-weight:900; letter-spacing:1px;">⏳ Awaiting scanner input...</p>', unsafe_allow_html=True)
 
 
-def _show_threat(image_bytes, threats, ts, s3, sns, table=None):
+def _show_threat(image_bytes, threats, ts, s3, sns, table=None, all_labels=None):
     threat_str = ', '.join(threats).upper()
     st.markdown(f"""
     <div class="threat-card" style="background:#1a0000; border:2px solid #ff4444; border-radius:10px; padding:20px; margin-bottom:15px;">
@@ -110,6 +129,8 @@ def _show_threat(image_bytes, threats, ts, s3, sns, table=None):
                 'Severity': 'CRITICAL',
                 'AlertStatus': '🔔 New',
                 'DetectedLabels': threats,
+                'WearingHolding': [l for l in (all_labels or []) if l not in BODY_PART_LABELS],
+                'TopEmotion': 'N/A',
             })
         except Exception as e:
             st.warning(f"DynamoDB write error: {e}")
@@ -128,7 +149,16 @@ def _show_identity(image_bytes, ts, capture_key, s3, table, label_response):
         age_range = result.get("AgeRange", "N/A")
         is_verified = result.get("Status") == "AUTHORIZED"
 
-        if is_verified:
+        if identity == "Spoof Attempt":
+            st.markdown("""
+            <div style="background:#1a0a00; border:2px solid #ff8800; border-radius:10px; padding:20px; margin-bottom:15px;">
+                <p style="color:#ff8800; font-size:1.8rem; font-weight:900; margin:0;">🎭 SPOOF DETECTED</p>
+                <p style="color:#ffffff; font-size:1.3rem; font-weight:800; margin:8px 0 4px 0;">📵 Photo or screen detected — not a live face</p>
+                <p style="color:#aaaaaa; font-size:1.1rem; margin:4px 0;">📋 Reason: Image appears to be a photo, phone, or printed picture</p>
+                <p style="color:#ffaa00; font-size:1.1rem; font-weight:800; margin:4px 0;">🔒 Action: Access Denied — Present your real face</p>
+            </div>""", unsafe_allow_html=True)
+            st.image(image_bytes, width=300)
+        elif is_verified:
             name = identity.replace(" (Team Member)", "")
             st.markdown(f"""
             <div style="background:#001a0e; border:2px solid #00ffcc; border-radius:10px; padding:20px; margin-bottom:15px;">
@@ -138,10 +168,9 @@ def _show_identity(image_bytes, ts, capture_key, s3, table, label_response):
                 <p style="color:#00ffcc; font-size:1.1rem; font-weight:800; margin:4px 0;">🔓 Action: Access Granted — Welcome, {name}</p>
             </div>""", unsafe_allow_html=True)
             st.image(image_bytes, width=300)
-            m1, m2, m3 = st.columns(3)
+            m1, m2 = st.columns(2)
             m1.metric("Emotion", emotion)
-            m2.metric("Age Range", age_range)
-            m3.metric("Status", "✅ VERIFIED")
+            m2.metric("Status", "✅ VERIFIED")
 
             filtered = [l for l in label_response['Labels'] if l['Name'] not in BODY_PART_LABELS][:4]
             if filtered:

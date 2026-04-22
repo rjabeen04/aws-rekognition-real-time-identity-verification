@@ -8,16 +8,14 @@ rekognition = boto3.client('rekognition')
 dynamodb = boto3.resource('dynamodb')
 sns = boto3.client('sns')
 table = dynamodb.Table('ImageAnalysisResults')
-registry_table = dynamodb.Table('SecureGuard_Registry')
 
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:378494867598:SecureGuard-Alerts"
 CRITICAL_LABELS = {"Knife", "Gun", "Weapon", "Rifle", "Pistol", "Dagger", "Blade", "Cutlery", "Kitchen Knife", "Sword", "Axe", "Firearm", "Handgun"}  # keep in sync with app/config.py DANGER_LABELS
+SPOOF_LABELS = {"Poster", "Screen", "Monitor", "Display", "Mobile Phone", "Phone", "Cell Phone", "Tablet Computer", "Computer", "Laptop", "LCD Screen", "Projection Screen"}
 BODY_PART_LABELS = {"Finger", "Hand", "Body Part", "Face", "Head", "Arm", "Leg", "Ear", "Eye", "Nose", "Mouth", "Neck", "Shoulder", "Thumb", "Person", "Human", "Portrait", "Selfie", "Photography"}
 
 
-def get_team_members():
-    response = registry_table.scan()
-    return {item['ImageKey']: item['Name'] for item in response.get('Items', [])}
+COLLECTION_ID = "secureguard-users"
 
 
 def sanitize_key(key):
@@ -63,6 +61,10 @@ def lambda_handler(event, context):
         if key.endswith('.json'):
             return {'statusCode': 200, 'body': 'File skipped (System File)'}
 
+        # threat_ images are already logged by the dashboard; skip to avoid duplicate "No Face Detected" entries
+        if key.startswith('threat_'):
+            return {'statusCode': 200, 'body': 'File skipped (threat already logged by dashboard)'}
+
         print(f"New Capture Detected: {key}. Starting Team Verification...")
 
         identity = "Unknown / Guest"
@@ -70,12 +72,28 @@ def lambda_handler(event, context):
         match_confidence = "N/A"
         threats = []
 
-        team_members = get_team_members()
-
-        # --- FACE CHECK ---
-        face_check = rekognition.detect_faces(
-            Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['DEFAULT']
-        )
+        # --- FACE CHECK (with ALL attributes to avoid a second call later) ---
+        try:
+            face_check = rekognition.detect_faces(
+                Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['ALL']
+            )
+        except Exception as e:
+            print("Image not found or access error:", e)
+            table.put_item(Item={
+                'ImageId': key,
+                'Timestamp': str(int(time.time())),
+                'Identity': 'Image Not Found',
+                'Status': 'ERROR',
+                'Severity': 'INFO',
+                'AlertStatus': 'New',
+                'MatchConfidence': 'N/A',
+                'TopEmotion': 'N/A',
+                'AgeRange': 'N/A',
+                'WearingHolding': [],
+                'DetectedLabels': [],
+                'BucketSource': bucket
+            })
+            return {'statusCode': 200, 'body': 'Image not found or access error'}
         if not face_check['FaceDetails']:
             table.put_item(Item={
                 'ImageId': key,
@@ -93,27 +111,53 @@ def lambda_handler(event, context):
             })
             return {'statusCode': 200, 'body': 'No face detected in image'}
 
+        # --- SPOOF CHECK ---
+        spoof_label_res = rekognition.detect_labels(
+            Image={'S3Object': {'Bucket': bucket, 'Name': key}}, MaxLabels=50, MinConfidence=70
+        )
+        spoof_labels_found = [l['Name'] for l in spoof_label_res['Labels'] if l['Name'] in SPOOF_LABELS]
+        if spoof_labels_found:
+            print(f"Spoof attempt detected: {spoof_labels_found}")
+            table.put_item(Item={
+                'ImageId': key,
+                'Timestamp': str(int(time.time())),
+                'Identity': 'Spoof Attempt',
+                'Status': 'DENIED',
+                'Severity': 'CRITICAL',
+                'AlertStatus': '🔔 New',
+                'MatchConfidence': 'N/A',
+                'TopEmotion': 'N/A',
+                'AgeRange': 'N/A',
+                'WearingHolding': [],
+                'DetectedLabels': spoof_labels_found,
+                'BucketSource': bucket
+            })
+            return {'statusCode': 200, 'body': 'Spoof attempt detected — access denied'}
+
         # --- FACE MATCHING ---
-        for image_key, name in team_members.items():
-            compare_res = rekognition.compare_faces(
-                SourceImage={'S3Object': {'Bucket': bucket, 'Name': image_key}},
-                TargetImage={'S3Object': {'Bucket': bucket, 'Name': key}},
-                SimilarityThreshold=80
+        try:
+            search_res = rekognition.search_faces_by_image(
+                CollectionId=COLLECTION_ID,
+                Image={'S3Object': {'Bucket': bucket, 'Name': key}},
+                MaxFaces=1,
+                FaceMatchThreshold=80
             )
-            if compare_res['FaceMatches']:
-                identity = f"{name} (Team Member)"
+            if search_res['FaceMatches']:
+                best = search_res['FaceMatches'][0]
+                identity = f"{best['Face']['ExternalImageId']} (Team Member)"
                 is_verified = True
-                match_confidence = f"{compare_res['FaceMatches'][0]['Similarity']:.1f}%"
+                match_confidence = f"{best['Similarity']:.1f}%"
                 print(f"Match Found: {identity} ({match_confidence})")
-                break
+        except Exception as e:
+            print("search_faces_by_image error:", e)
 
         # --- OBJECT & ATTRIBUTE ANALYTICS ---
         label_res = rekognition.detect_labels(
             Image={'S3Object': {'Bucket': bucket, 'Name': key}}, MaxLabels=50, MinConfidence=30
         )
-        face_res = rekognition.detect_faces(
-            Image={'S3Object': {'Bucket': bucket, 'Name': key}}, Attributes=['ALL']
-        )
+        face_res = face_check  # reuse the earlier detect_faces result (already has ALL attributes)
+        # reuse face_check result for emotion/age if full attributes not needed
+
 
         all_labels = [l['Name'] for l in label_res['Labels']]
         threats = [l for l in all_labels if l in CRITICAL_LABELS]

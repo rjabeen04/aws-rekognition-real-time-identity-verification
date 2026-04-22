@@ -6,7 +6,7 @@ from boto3.dynamodb.conditions import Key
 from app.config import DATA_FILE
 
 
-def poll_dynamodb(table, capture_key, retries=15, delay=1):
+def poll_dynamodb(table, capture_key, retries=25, delay=2):
     for _ in range(retries):
         result = table.query(KeyConditionExpression=Key('ImageId').eq(capture_key))
         if result['Items']:

@@ -40,7 +40,7 @@ with tab_logs:
     render_logs(table)
 
 with tab_registry:
-    render_registry(s3, table_registry)
+    render_registry(s3, table_registry, rekognition)
 
 with tab_settings:
     render_settings()

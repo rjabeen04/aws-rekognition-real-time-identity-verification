@@ -2,9 +2,19 @@
 credentials
 __pycache__/
 *.jpg
+*.jpeg
 *.png
 .env
 venv/
 .DS_Store
 session_data.json
 *.zip
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Terraform plan files
+*.tfplan

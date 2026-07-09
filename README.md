@@ -182,4 +182,28 @@ Each AWS service is granted **only the minimum permissions required** — no wil
 |---|---|
 | Reshma | `reshma.jpg` |
 | David | `david.jpg` |
-| Hilton | `hilton.jpeg` |
+| Hilton | `hilton.jpeg` 
+
+## Infrastructure Provisioning (Terraform)
+
+Terraform provisions the AWS infrastructure in the following order:
+
+S3 Bucket
+      ↓
+IAM Role
+      ↓
+IAM Policy
+      ↓
+IAM Policy Attachment
+      ↓
+DynamoDB
+      ↓
+SNS Topic
+      ↓
+Rekognition Collection
+      ↓
+Lambda Function
+      ↓
+Lambda Permission
+      ↓
+S3 Event Notification

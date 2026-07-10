@@ -72,7 +72,34 @@ resource "aws_iam_policy" "lambda_policy" {
         ]
 
         Resource = "*"
-      }
+      },
+      {
+        Sid    = "DynamoDBWrite"
+        Effect = "Allow"
+
+        Action = [
+          "dynamodb:PutItem"
+        ]
+
+        Resource = [
+          aws_dynamodb_table.image_analysis.arn
+        ]
+      },
+      {
+        Sid    = "SNSPublish"
+        Effect = "Allow"
+
+        Action = [
+          "sns:Publish"
+        ]
+
+        Resource = [
+          aws_sns_topic.secureguard_alerts.arn
+        ]
+      },
+
+
+
     ]
   })
 
